@@ -1,0 +1,51 @@
+#include <IRremoteESP8266.h>
+#include <IRrecv.h>
+#include <IRutils.h>
+#include <WiFi.h>
+
+const uint16_t kRecvPin = 4;
+
+IRrecv irrecv(kRecvPin);
+decode_results results;
+
+void setup() {
+  Serial.begin(115200);
+  delay(3000);
+
+  Serial.println("BOOT");
+
+  WiFi.mode(WIFI_OFF);
+  btStop();
+
+  pinMode(kRecvPin, INPUT_PULLUP);
+
+  irrecv.enableIRIn();
+
+  // IMPORTANT: after enableIRIn()
+  irrecv.setUnknownThreshold(12);
+
+  // Flush startup garbage
+  delay(2000);
+  irrecv.resume();
+
+  Serial.println("Listening on GPIO 4");
+}
+
+void loop() {
+  if (irrecv.decode(&results)) {
+
+    // Reject obvious garbage
+    if (results.bits < 16) {
+      irrecv.resume();
+      return;
+    }
+
+    if (results.decode_type == UNKNOWN) {
+      irrecv.resume();
+      return;
+    }
+
+    Serial.println(resultToHumanReadableBasic(&results));
+    irrecv.resume();
+  }
+}
