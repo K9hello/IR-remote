@@ -1,0 +1,121 @@
+#include <IRremoteESP8266.h>
+#include <IRsend.h>
+#include "esp_sleep.h"
+
+const uint16_t kIrLedPin = 4;   // IR LED pin
+IRsend irsend(kIrLedPin);
+
+const uint16_t kButtonPin = 23; // Button pin
+bool lastButtonState = HIGH;    // Button normally HIGH
+
+const uint8_t batteryPin = 35; //low battery pin
+
+// Yamaha Soundbar power
+const uint16_t yamahaPowerRaw[] = { 
+  9004, 4456, 616, 514, 590, 544, 586, 544,
+  586, 1642, 590, 1646, 590, 1640, 592, 1644,
+  590, 568, 560, 1642, 590, 1644, 590, 1644,
+  590, 542, 586, 568, 562, 568, 560, 570, 560, 1644,
+  590, 542, 588, 542, 588, 1644, 590, 1642, 592, 566,
+  562, 542, 588, 1644, 590, 1644, 590, 1642, 590, 1644,
+  590, 542, 586, 570, 560, 1642, 590, 1642, 592, 568,
+  560, 542, 586, 39782, 9004, 2220, 618
+};
+const uint16_t yamahaPowerLen =
+  sizeof(yamahaPowerRaw) / sizeof(yamahaPowerRaw[0]);
+
+const uint32_t yamahaSoundbarCode = 0x1EE133CC;
+const decode_type_t yamahaSoundbarProtocol = NEC;
+const uint8_t yamahaSoundbarBits = 32;
+
+// Insignia TV power
+const uint16_t insigniaPowerRaw[] = {
+  9046, 4484, 592, 534, 562, 1680, 566, 1680,
+  566, 562, 560, 586, 560, 562, 560, 536, 584,
+  1656, 590, 1656, 566, 586, 536, 1680, 588,
+  562, 536, 562, 586, 562, 536, 562, 586, 536,
+  560, 1678, 592, 1654, 564, 1682, 564, 1680,
+  564, 560, 586, 564, 562, 560, 534, 588, 536,
+  586, 560, 536, 560, 588, 558, 538, 584, 1658,
+  564, 1680, 590, 1656, 564, 1682, 564
+};
+
+const uint32_t insigniaTvCode = 0x61A0F00F;
+const decode_type_t insigniaTvProtocol = NEC;
+const uint8_t insigniaTvBits = 32;
+
+//tv test
+const uint16_t testtvraw[] = {
+  8514, 4232, 572, 1550, 570, 1552, 570, 484, 542,
+  514, 540, 542, 512, 542, 514, 516, 538, 544, 510,
+  1580, 542, 1578, 568, 1554, 568, 488, 540, 1580,
+  542, 514, 538, 542, 512, 542, 512, 22556, 598,
+  1524, 570, 1550, 572, 484, 570, 486, 540, 516,
+  540, 542, 512, 542, 512, 516, 540, 1580, 568,
+  1552, 568, 1552, 570, 488, 542, 1578, 566,
+  490, 540, 542, 512, 514, 540
+};
+
+const uint32_t jvcTestTvCode = 0xC0E8;
+const decode_type_t jvcTestTvProtocol = JVC;
+const uint8_t jvcTestTvBits = 16;
+
+//battery 
+const float ADC_REF = 3.3;
+const float R1 = 100000.0;
+const float R2 = 100000.0;
+const float low_batt_voltage = 2.4;
+
+float readBatteryVoltage(){
+  int raw = analogRead(batteryPin);
+  float v = (raw / 4095.0) * ADC_REF;
+  return v * ((R1+R2) / R2);
+}
+
+void flashLowBattery(){
+  pinMode(LED_BUILTIN, OUTPUT);
+  for(int i=0; i<3; i++){
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(150);
+    digitalWrite(LED_BUILTIN, LOW);
+    delay(150);
+  }
+}
+
+void setup() {
+  WiFi.mode(WIFI_OFF);
+  btStop();
+
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  pinMode(IR_LED_PIN, OUTPUT);
+
+  Serial.begin(115200);
+  irsend.begin();
+  pinMode(kButtonPin, INPUT_PULLUP);  // Button uses internal pull-up
+  Serial.println("Ready! Press button to send IR signals.");
+}
+
+void loop() {
+  bool buttonState = digitalRead(kButtonPin);
+
+  // Detect falling edge (button press)
+  if (lastButtonState == HIGH && buttonState == LOW) {
+    Serial.println("Button pressed! Sending IR signals...");
+    
+    //test tv power
+    //irsend.sendJVC(jvcTestTvCode);
+    // Send Yamaha soundbar power
+    //irsend.sendRaw(yamahaPowerRaw, yamahaPowerLen, 38);
+    irsend.sendNEC(yamahaSoundbarCode);
+    delay(300); // small gap between devices
+    
+    // Send Insignia TV power
+    //irsend.sendRaw(insigniaPowerRaw, sizeof(insigniaPowerRaw)/sizeof(uint16_t), 38);
+    irsend.sendNEC(insigniaTvCode);
+    
+    Serial.println("Done sending!");
+  }
+
+  lastButtonState = buttonState;
+  delay(50); // simple debounce
+}
