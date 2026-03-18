@@ -1,0 +1,15 @@
+#include <IRremoteESP8266.h>
+#include <IRsend.h>
+
+const uint16_t IR_LED_PIN = 4;   // IR LED pin
+IRsend irsend(IR_LED_PIN);
+
+void setup() {
+  irsend.begin();
+  irsend.sendNEC(0x1EE133CC);
+  delay(150); // small gap between devices
+  irsend.sendNEC(0x61A0F00F);
+}
+
+void loop() {
+}
