@@ -1,0 +1,136 @@
+#include <IRremoteESP8266.h>
+#include <IRsend.h>
+#include "esp_sleep.h"
+#include <WiFi.h>
+#include <Preferences.h>
+
+#define LED_PIN 2
+#define ADC_PIN 35
+#define BatteryCheckGate_PIN 26
+
+Preferences prefs;
+
+const uint16_t IR_LED_PIN = 4;   // IR LED pin
+IRsend irsend(IR_LED_PIN);
+
+const uint16_t BUTTON_PIN = 15; // Button pin
+
+// Yamaha Soundbar power
+const uint32_t yamahaSoundbarCode = 0x1EE133CC;
+const decode_type_t yamahaSoundbarProtocol = NEC;
+const uint8_t yamahaSoundbarBits = 32;
+
+// Insignia TV power
+const uint32_t insigniaTvCode = 0x61A0F00F;
+const decode_type_t insigniaTvProtocol = NEC;
+const uint8_t insigniaTvBits = 32;
+
+// kim tv test power
+const uint32_t jvcTestTvCode = 0xC0E8;
+const decode_type_t jvcTestTvProtocol = JVC;
+const uint8_t jvcTestTvBits = 16;
+
+//battery 
+const uint16_t low_batt_raw = 1400;
+
+uint16_t readBatteryRaw(){
+  digitalWrite(BatteryCheckGate_PIN, HIGH);
+  delay(5);
+
+  int raw = analogRead(ADC_PIN);
+  
+  digitalWrite(BatteryCheckGate_PIN, LOW);
+
+  prefs.begin("battery", false);
+  uint32_t count = prefs.getUInt("count",0);
+  char key[16];
+  snprintf(key, sizeof(key), "batt_%lu", count);
+  prefs.putUInt(key, raw);
+  prefs.putUInt("count", count+1);
+  prefs.end();
+
+  return raw;
+}
+
+void flashLowBattery(){
+  pinMode(LED_PIN, OUTPUT);
+  for(int i=0; i<3; i++){
+    digitalWrite(LED_PIN, HIGH);
+    delay(150);
+    digitalWrite(LED_PIN, LOW);
+    delay(150);
+  }
+}
+
+void printLog(){
+  Serial.begin(115200);
+  prefs.begin("battery", true); // read-only
+  uint32_t count = prefs.getUInt("count", 0);
+
+  Serial.println("Battery log:");
+  for (uint32_t i = 0; i < count; i++) {
+    char key[16];
+    snprintf(key, sizeof(key), "batt_%lu", i);
+    uint16_t val = prefs.getUInt(key, 0);
+    Serial.print(i);
+    Serial.print(": ");
+    Serial.println(val);
+  }
+  prefs.end();
+  Serial.end();
+}
+
+void sendIRsignals(){
+  irsend.begin();
+  //irsend.sendJVC(jvcTestTvCode);
+  irsend.sendNEC(yamahaSoundbarCode);
+  delay(300); // small gap between devices
+  irsend.sendNEC(insigniaTvCode);
+  delay(300); //ensure it finishes
+}
+
+void setup() {
+  setCpuFrequencyMhz(80);
+  
+  WiFi.mode(WIFI_OFF);
+  btStop();
+
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  pinMode(IR_LED_PIN, OUTPUT);
+  pinMode(BatteryCheckGate_PIN, OUTPUT);
+  digitalWrite(BatteryCheckGate_PIN, LOW);
+
+  if(esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT0){
+
+    // Read battery voltage
+    analogReadResolution(12);                 // 0–4095
+    analogSetPinAttenuation(ADC_PIN, ADC_11db); // allows ~0–3.3V
+
+    uint16_t batteryRaw = readBatteryRaw();
+
+    // Flash LED ONLY if battery is low
+    if (batteryRaw < low_batt_raw && batteryRaw > 0) {
+      flashLowBattery();
+    }
+
+    //send signals
+    sendIRsignals();
+  }
+
+  
+  //clear logs
+  // prefs.begin("battery", false);
+  // prefs.clear();
+  // prefs.end();
+  
+  printLog();
+
+  // Wake again on button press (LOW)
+  esp_sleep_enable_ext0_wakeup((gpio_num_t)BUTTON_PIN, 0);
+
+  // Enter deep sleep
+  esp_deep_sleep_start();
+}
+
+void loop() {
+}
